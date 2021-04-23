@@ -61,7 +61,6 @@ where
         if !self.empty() {
             let current_min_key_copy = self.min_key().unwrap().clone();
             for (i, root) in self.trees.iter_mut().enumerate() {
-                // TODO save pointers to roots in map
                 debug_assert!(!root.mark);
                 match root.decrease_key(item, &new_key) {
                     DecreaseKeyResult::Unmarked(mut cutoff) => {
@@ -86,7 +85,7 @@ where
                         }
                         break;
                     }
-                    DecreaseKeyResult::Marked(_) => panic!("Should not happen!"),
+                    DecreaseKeyResult::Marked(_) => {},
                     DecreaseKeyResult::NotFound => {}
                     DecreaseKeyResult::NoDecrease => {
                         break;
