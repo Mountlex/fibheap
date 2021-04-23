@@ -235,6 +235,8 @@ where
 
 #[cfg(test)]
 mod test_heap {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -394,46 +396,9 @@ mod test_heap {
         assert_eq!(heap.pop_min(), None);
     }
 
-    #[test]
-    fn test_heap_equal_keys_and_items() {
-        let mut heap = FibHeap::new();
-
-        heap.insert(1, 1);
-        heap.insert(1, 1);
-
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), None);
-    }
-
-    #[test]
-    fn test_heap_equal_keys_and_items_large() {
-        let mut heap = FibHeap::new();
-
-        heap.insert(0, 0);
-        heap.insert(1, 1);
-        heap.insert(1, 1);
-        heap.insert(1, 1);
-        heap.insert(1, 1);
-        heap.insert(0, 0);
-        heap.insert(0, 0);
-        heap.insert(0, 0);
-        heap.insert(1, 1);
-
-        assert_eq!(heap.pop_min(), Some(0));
-        assert_eq!(heap.pop_min(), Some(0));
-        assert_eq!(heap.pop_min(), Some(0));
-        assert_eq!(heap.pop_min(), Some(0));
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), Some(1));
-        assert_eq!(heap.pop_min(), None);
-    }
 
     #[quickcheck]
-    fn insert_and_pop_all(input: Vec<u64>) -> bool {
+    fn insert_and_pop_all(input: HashSet<u64>) -> bool {
         let mut heap = FibHeap::new();
 
         for item in input.iter() {
@@ -449,14 +414,15 @@ mod test_heap {
     }
 
     #[quickcheck]
-    fn insert_and_decrease_and_pop(input: Vec<u64>) -> bool {
+    fn insert_and_decrease_and_pop(input: HashSet<u64>) -> bool {
+        let input_vec = input.into_iter().collect::<Vec<u64>>();
         let mut heap = FibHeap::new();
 
-        for item in input.iter() {
+        for item in input_vec.iter() {
             heap.insert(*item, u64::MAX);
         }
 
-        for item in input.iter() {
+        for item in input_vec.iter() {
             heap.decrease_key(item, *item);
         }
 
