@@ -4,15 +4,16 @@ extern crate quickcheck;
 #[macro_use(quickcheck)]
 extern crate quickcheck_macros;
 
-pub struct FibHeap<I> {
+pub struct FibHeap<I, K> {
     min: Option<usize>,
-    trees: Vec<TreeNode<I>>,
+    trees: Vec<TreeNode<I, K>>,
     n: usize,
 }
 
-impl<I> FibHeap<I>
+impl<I, K> FibHeap<I, K>
 where
     I: PartialEq + Eq + Clone,
+    K: Ord + Clone,
 {
     pub fn new() -> Self {
         FibHeap {
@@ -36,17 +37,18 @@ where
             .map(|root| &root.item)
     }
 
-    pub fn min_key(&self) -> Option<&u64> {
+    pub fn min_key(&self) -> Option<&K> {
         self.min
             .map(|min_idx| &self.trees[min_idx])
             .map(|root| &root.key)
     }
 
-    pub fn insert(&mut self, item: I, key: u64) {
-        self.trees.push(TreeNode::new(item, key));
+    pub fn insert(&mut self, item: I, key: K) {
+        let key_ref = &key;
+        self.trees.push(TreeNode::new(item, key.clone()));
         self.n += 1;
-        if let Some(&min_key) = self.min_key() {
-            if key < min_key {
+        if let Some(min_key) = self.min_key() {
+            if key_ref < min_key {
                 self.min = Some(self.trees.len() - 1);
             }
         } else {
@@ -55,33 +57,43 @@ where
         }
     }
 
-    pub fn decrease_key(&mut self, item: &I, new_key: u64) {
-        for (i, root) in self.trees.iter_mut().enumerate() {
-            // TODO save pointers to roots in map
-            debug_assert!(!root.mark);
-            match root.decrease_key(item, new_key) {
-                DecreaseKeyResult::Unmarked(cutoff) => {
-                    root.mark = false; // Unmark root if marked
-                    if new_key < *self.min_key().unwrap() {
-                        // tree node corresponding to decreased key is first in cutoff
-                        self.min = Some(self.trees.len());
+    pub fn decrease_key(&mut self, item: &I, new_key: K) {
+        if !self.empty() {
+            let current_min_key_copy = self.min_key().unwrap().clone();
+            for (i, root) in self.trees.iter_mut().enumerate() {
+                // TODO save pointers to roots in map
+                debug_assert!(!root.mark);
+                match root.decrease_key(item, &new_key) {
+                    DecreaseKeyResult::Unmarked(mut cutoff) => {
+                        root.mark = false; // Unmark root if marked                  
+                        if new_key < current_min_key_copy {
+                            // tree node corresponding to decreased key is first in cutoff
+                            self.min = Some(self.trees.len());
+                        }
+                        if let Some(decreased_child) = cutoff.first_mut() {
+                            decreased_child.key = new_key;
+                        }
+                        for mut node in cutoff {
+                            node.mark = false;
+                            self.trees.push(node);
+                        }
+                        break;
                     }
-                    for mut node in cutoff {
-                        node.mark = false;
-                        self.trees.push(node);
+                    DecreaseKeyResult::ItemFound => {
+                        root.key = new_key;
+                        if root.key < current_min_key_copy {
+                            self.min = Some(i);
+                        }
+                        break;
                     }
-                    break;
+                    DecreaseKeyResult::Marked(_) => panic!("Should not happen!"),
+                    DecreaseKeyResult::NotFound => {}
+                    DecreaseKeyResult::NoDecrease => {
+                        break;
+                    }
                 }
-                DecreaseKeyResult::KeyDecreased => {
-                    if new_key < *self.min_key().unwrap() {
-                        self.min = Some(i);
-                    }
-                    break;
-                }
-                DecreaseKeyResult::Marked(_) => panic!("Should not happen!"),
-                DecreaseKeyResult::NotFound => {}
             }
-        }
+    }
     }
 
     pub fn pop_min(&mut self) -> Option<I> {
@@ -95,7 +107,7 @@ where
             }
 
             let max_rank = (2.0 * (self.n as f64).log(1.6)).ceil() as usize;
-            let mut roots: Vec<Option<TreeNode<I>>> = vec![None; max_rank + 1];
+            let mut roots: Vec<Option<TreeNode<I, K>>> = vec![None; max_rank + 1];
 
             for root in self.trees.drain(..) {
                 let mut node = root;
@@ -111,10 +123,9 @@ where
             *min_idx = 0;
             for root in roots {
                 if let Some(mut root) = root {
-                    let key = root.key;
                     root.mark = false;
                     self.trees.push(root);
-                    if key < self.trees[*min_idx].key {
+                    if self.trees.last().unwrap().key < self.trees[*min_idx].key {
                         *min_idx = self.trees.len() - 1;
                     }
                 }
@@ -128,7 +139,7 @@ where
     }
 }
 
-fn link<I>(mut first: TreeNode<I>, mut second: TreeNode<I>) -> TreeNode<I> {
+fn link<I,K>(mut first: TreeNode<I,K>, mut second: TreeNode<I,K>) -> TreeNode<I,K> where K: Ord {
     if first.key < second.key {
         second.mark = false;
         first.children.push(second);
@@ -140,26 +151,28 @@ fn link<I>(mut first: TreeNode<I>, mut second: TreeNode<I>) -> TreeNode<I> {
     }
 }
 
-enum DecreaseKeyResult<I> {
+enum DecreaseKeyResult<I, K> {
     NotFound,
-    KeyDecreased,
-    Marked(Vec<TreeNode<I>>),
-    Unmarked(Vec<TreeNode<I>>),
+    NoDecrease,
+    ItemFound,
+    Marked(Vec<TreeNode<I, K>>),
+    Unmarked(Vec<TreeNode<I, K>>),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct TreeNode<I> {
-    children: Vec<TreeNode<I>>,
-    key: u64,
+struct TreeNode<I, K> {
+    children: Vec<TreeNode<I, K>>,
+    key: K,
     mark: bool,
     item: I,
 }
 
-impl<I> TreeNode<I>
+impl<I, K> TreeNode<I, K>
 where
     I: Eq + PartialEq,
+    K: Ord + Clone
 {
-    fn new(item: I, key: u64) -> Self {
+    fn new(item: I, key: K) -> Self {
         TreeNode {
             item,
             key,
@@ -172,19 +185,18 @@ where
         self.children.len()
     }
 
-    fn decrease_key(&mut self, item: &I, new_key: u64) -> DecreaseKeyResult<I> {
+    fn decrease_key(&mut self, item: &I, new_key: &K) -> DecreaseKeyResult<I, K> {
         if &self.item == item {
-            if self.key > new_key {
-                self.key = new_key;
-                DecreaseKeyResult::KeyDecreased
+            if &self.key > new_key {
+                DecreaseKeyResult::ItemFound
             } else {
-                DecreaseKeyResult::NotFound
+                DecreaseKeyResult::NoDecrease
             }
         } else {
             for (i, c) in self.children.iter_mut().enumerate() {
                 match c.decrease_key(item, new_key) {
-                    DecreaseKeyResult::KeyDecreased => {
-                        if self.key > new_key {
+                    DecreaseKeyResult::ItemFound => {
+                        if &self.key > new_key {
                             let cut_child = self.children.swap_remove(i);
                             let cutoff = vec![cut_child];
                             if self.mark {
@@ -209,6 +221,9 @@ where
                     DecreaseKeyResult::Unmarked(cutoff) => {
                         return DecreaseKeyResult::Unmarked(cutoff)
                     }
+                    DecreaseKeyResult::NoDecrease => {
+                        return DecreaseKeyResult::NoDecrease;
+                    }
                     DecreaseKeyResult::NotFound => {}
                 }
             }
@@ -224,7 +239,7 @@ mod test_heap {
 
     #[test]
     fn test_heap_empty() {
-        let mut heap: FibHeap<()> = FibHeap::new();
+        let mut heap: FibHeap<(),()> = FibHeap::new();
 
         assert_eq!(heap.len(), 0);
         assert_eq!(heap.peek_min(), None);
