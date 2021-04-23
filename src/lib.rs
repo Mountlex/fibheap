@@ -4,7 +4,6 @@ extern crate quickcheck;
 #[macro_use(quickcheck)]
 extern crate quickcheck_macros;
 
-
 pub struct FibHeap<I> {
     min: Option<usize>,
     trees: Vec<TreeNode<I>>,
@@ -25,6 +24,10 @@ where
 
     pub fn len(&self) -> usize {
         self.n
+    }
+
+    pub fn empty(&self) -> bool {
+        self.n == 0
     }
 
     pub fn peek_min(&self) -> Option<&I> {
@@ -52,38 +55,13 @@ where
         }
     }
 
-    fn remove(&mut self, node: &TreeNode<I>) -> Option<I> {
-        if let Some(pos) = self.trees.iter().position(|n| n == node) {
-            if self.min == Some(self.trees.len() - 1) {
-                self.min = Some(pos);
-            }
-            self.n -= 1;
-            let tree_node = self.trees.swap_remove(pos);
-            for c in tree_node.children {
-                self.trees.push(c);
-            }
-            Some(tree_node.item)
-        } else {
-            None
-        }
-    }
-
-    fn cut(&mut self, node: &TreeNode<I>) {
-        for root in self.trees.iter_mut() {
-            // TODO save pointers to roots in map
-            if let Some(tree_node) = root.cut(node) {
-                self.trees.push(tree_node);
-                break;
-            }
-        }
-    }
-
     pub fn decrease_key(&mut self, item: &I, new_key: u64) {
         for (i, root) in self.trees.iter_mut().enumerate() {
             // TODO save pointers to roots in map
             debug_assert!(!root.mark);
             match root.decrease_key(item, new_key) {
                 DecreaseKeyResult::Unmarked(cutoff) => {
+                    root.mark = false; // Unmark root if marked
                     if new_key < *self.min_key().unwrap() {
                         // tree node corresponding to decreased key is first in cutoff
                         self.min = Some(self.trees.len());
@@ -116,13 +94,14 @@ where
                 self.trees.push(c);
             }
 
-            let max_rank = (4.0 * (self.n as f64).log2()).ceil() as usize;
+            let max_rank = (2.0 * (self.n as f64).log(1.6)).ceil() as usize;
             let mut roots: Vec<Option<TreeNode<I>>> = vec![None; max_rank + 1];
 
             for root in self.trees.drain(..) {
                 let mut node = root;
+
                 while roots.get(node.rank()).unwrap().is_some() {
-                    let other = roots.remove(node.rank()).unwrap();
+                    let other = std::mem::replace(&mut roots[node.rank()], None).unwrap();
                     node = link(node, other);
                 }
                 let rank = node.rank();
@@ -131,8 +110,9 @@ where
 
             *min_idx = 0;
             for root in roots {
-                if let Some(root) = root {
+                if let Some(mut root) = root {
                     let key = root.key;
+                    root.mark = false;
                     self.trees.push(root);
                     if key < self.trees[*min_idx].key {
                         *min_idx = self.trees.len() - 1;
@@ -192,19 +172,6 @@ where
         self.children.len()
     }
 
-    fn cut(&mut self, node: &TreeNode<I>) -> Option<TreeNode<I>> {
-        for (i, c) in self.children.iter_mut().enumerate() {
-            if c == node {
-                return Some(self.children.swap_remove(i));
-            } else {
-                if let Some(res) = c.cut(node) {
-                    return Some(res);
-                }
-            }
-        }
-        None
-    }
-
     fn decrease_key(&mut self, item: &I, new_key: u64) -> DecreaseKeyResult<I> {
         if &self.item == item {
             if self.key > new_key {
@@ -218,10 +185,12 @@ where
                 match c.decrease_key(item, new_key) {
                     DecreaseKeyResult::KeyDecreased => {
                         if self.key > new_key {
-                            let cutoff = vec![self.children.swap_remove(i)];
+                            let cut_child = self.children.swap_remove(i);
+                            let cutoff = vec![cut_child];
                             if self.mark {
                                 return DecreaseKeyResult::Marked(cutoff);
                             } else {
+                                self.mark = true;
                                 return DecreaseKeyResult::Unmarked(cutoff);
                             }
                         } else {
@@ -249,12 +218,9 @@ where
     }
 }
 
-
-
 #[cfg(test)]
 mod test_heap {
     use super::*;
-
 
     #[test]
     fn test_heap_empty() {
@@ -303,10 +269,10 @@ mod test_heap {
         heap.insert(1, 1);
         heap.insert(2, 2);
         heap.insert(3, 3);
-        
+
         assert_eq!(heap.pop_min(), Some(1));
         assert_eq!(heap.pop_min(), Some(2));
-        
+
         heap.insert(2, 2);
         heap.insert(5, 5);
         heap.insert(6, 6);
@@ -327,7 +293,7 @@ mod test_heap {
         assert_eq!(heap.pop_min(), Some(6));
         assert_eq!(heap.pop_min(), Some(7));
         assert_eq!(heap.pop_min(), Some(8));
-        
+
         assert_eq!(heap.len(), 0);
         assert_eq!(heap.peek_min(), None);
         assert_eq!(heap.min_key(), None);
@@ -340,7 +306,7 @@ mod test_heap {
 
         heap.insert(3, 3);
         heap.insert(4, 4);
-        
+
         heap.decrease_key(&3, 2);
         assert_eq!(heap.peek_min(), Some(&3));
         assert_eq!(heap.min_key(), Some(&2));
@@ -357,10 +323,10 @@ mod test_heap {
         heap.insert(2, 2);
         heap.insert(3, 3);
         heap.insert(4, 4);
-        
+
         heap.decrease_key(&5, 1);
         heap.decrease_key(&6, 1);
-        
+
         assert_eq!(heap.pop_min(), Some(2));
         assert_eq!(heap.pop_min(), Some(3));
         assert_eq!(heap.pop_min(), Some(4));
@@ -380,7 +346,7 @@ mod test_heap {
 
         assert_eq!(heap.pop_min(), Some(1));
         assert_eq!(heap.pop_min(), Some(2));
-        
+
         heap.decrease_key(&6, 1);
         heap.insert(2, 2);
 
@@ -401,9 +367,58 @@ mod test_heap {
         assert_eq!(heap.len(), 0);
     }
 
+    #[test]
+    fn test_heap_equal_keys() {
+        let mut heap = FibHeap::new();
+
+        heap.insert(1, 1);
+        heap.insert(2, 1);
+
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), Some(2));
+        assert_eq!(heap.pop_min(), None);
+    }
+
+    #[test]
+    fn test_heap_equal_keys_and_items() {
+        let mut heap = FibHeap::new();
+
+        heap.insert(1, 1);
+        heap.insert(1, 1);
+
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), None);
+    }
+
+    #[test]
+    fn test_heap_equal_keys_and_items_large() {
+        let mut heap = FibHeap::new();
+
+        heap.insert(0, 0);
+        heap.insert(1, 1);
+        heap.insert(1, 1);
+        heap.insert(1, 1);
+        heap.insert(1, 1);
+        heap.insert(0, 0);
+        heap.insert(0, 0);
+        heap.insert(0, 0);
+        heap.insert(1, 1);
+
+        assert_eq!(heap.pop_min(), Some(0));
+        assert_eq!(heap.pop_min(), Some(0));
+        assert_eq!(heap.pop_min(), Some(0));
+        assert_eq!(heap.pop_min(), Some(0));
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), Some(1));
+        assert_eq!(heap.pop_min(), None);
+    }
 
     #[quickcheck]
-    fn insert_and_pop_all(mut input: Vec<u64>) -> bool {
+    fn insert_and_pop_all(input: Vec<u64>) -> bool {
         let mut heap = FibHeap::new();
 
         for item in input.iter() {
@@ -415,8 +430,26 @@ mod test_heap {
             sorted.push(item);
         }
 
-        input.sort();
+        sorted.as_slice().windows(2).all(|w| w[0] <= w[1])
+    }
 
-        input == sorted
+    #[quickcheck]
+    fn insert_and_decrease_and_pop(input: Vec<u64>) -> bool {
+        let mut heap = FibHeap::new();
+
+        for item in input.iter() {
+            heap.insert(*item, u64::MAX);
+        }
+
+        for item in input.iter() {
+            heap.decrease_key(item, *item);
+        }
+
+        let mut sorted = Vec::<u64>::new();
+        while let Some(item) = heap.pop_min() {
+            sorted.push(item);
+        }
+
+        sorted.as_slice().windows(2).all(|w| w[0] <= w[1])
     }
 }
