@@ -23,6 +23,27 @@ where
         }
     }
 
+    pub fn from_vec(input: Vec<(I, K)>) -> Self {
+        let n = input.len();
+        let mut min: Option<usize> = None;
+        let mut trees = Vec::<TreeNode<I, K>>::with_capacity(input.len());
+        for (item, key) in input {
+            if let Some(min) = &mut min {
+                if &key < &trees[*min].key {
+                    *min = trees.len();
+                }
+            }  else {
+                min = Some(trees.len());
+            }
+            trees.push(TreeNode::new(item, key));
+        }
+        FibHeap {
+            min,
+            trees,
+            n
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.n
     }
@@ -64,7 +85,7 @@ where
                 debug_assert!(!root.mark);
                 match root.decrease_key(item, &new_key) {
                     DecreaseKeyResult::Unmarked(mut cutoff) => {
-                        root.mark = false; // Unmark root if marked                  
+                        root.mark = false; // Unmark root if marked
                         if new_key < current_min_key_copy {
                             // tree node corresponding to decreased key is first in cutoff
                             self.min = Some(self.trees.len());
@@ -85,14 +106,14 @@ where
                         }
                         break;
                     }
-                    DecreaseKeyResult::Marked(_) => {},
+                    DecreaseKeyResult::Marked(_) => {}
                     DecreaseKeyResult::NotFound => {}
                     DecreaseKeyResult::NoDecrease => {
                         break;
                     }
                 }
             }
-    }
+        }
     }
 
     pub fn pop_min(&mut self) -> Option<I> {
@@ -138,7 +159,10 @@ where
     }
 }
 
-fn link<I,K>(mut first: TreeNode<I,K>, mut second: TreeNode<I,K>) -> TreeNode<I,K> where K: Ord {
+fn link<I, K>(mut first: TreeNode<I, K>, mut second: TreeNode<I, K>) -> TreeNode<I, K>
+where
+    K: Ord,
+{
     if first.key < second.key {
         second.mark = false;
         first.children.push(second);
@@ -169,7 +193,7 @@ struct TreeNode<I, K> {
 impl<I, K> TreeNode<I, K>
 where
     I: Eq + PartialEq,
-    K: Ord + Clone
+    K: Ord + Clone,
 {
     fn new(item: I, key: K) -> Self {
         TreeNode {
@@ -240,7 +264,7 @@ mod test_heap {
 
     #[test]
     fn test_heap_empty() {
-        let mut heap: FibHeap<(),()> = FibHeap::new();
+        let mut heap: FibHeap<(), ()> = FibHeap::new();
 
         assert_eq!(heap.len(), 0);
         assert_eq!(heap.peek_min(), None);
@@ -394,7 +418,6 @@ mod test_heap {
         assert_eq!(heap.pop_min(), Some(2));
         assert_eq!(heap.pop_min(), None);
     }
-
 
     #[quickcheck]
     fn insert_and_pop_all(input: HashSet<u64>) -> bool {
