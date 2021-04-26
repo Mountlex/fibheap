@@ -137,18 +137,18 @@ where
                     node = link(node, other);
                 }
                 let rank = node.rank();
+                node.mark = false;
                 roots[rank] = Some(node);
             }
 
+            let mut new_roots: Vec<TreeNode<I,K >> = roots.into_iter().flatten().collect();
+            std::mem::swap(&mut new_roots, &mut self.trees);
+            
             *min_idx = 0;
-            for root in roots {
-                if let Some(mut root) = root {
-                    root.mark = false;
-                    self.trees.push(root);
-                    if self.trees.last().unwrap().key < self.trees[*min_idx].key {
-                        *min_idx = self.trees.len() - 1;
+            for (i,root) in self.trees.iter().enumerate() {
+                    if &root.key < &self.trees[*min_idx].key {
+                        *min_idx = i;
                     }
-                }
             }
         }
         if self.n == 0 {
